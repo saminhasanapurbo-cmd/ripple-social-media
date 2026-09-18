@@ -58,9 +58,13 @@ export function PostComposer({ currentUser, parentPost, onPostCreated }: PostCom
     <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs p-3.5 sm:p-4 mb-3 transition">
       <form onSubmit={handleSubmit}>
         <div className="flex gap-3">
+          {/* Avatar / Anon state */}
           <div className="shrink-0 pt-0.5">
             {isAnonymous ? (
-              <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 ring-1 ring-slate-200" title="Anonymous Mode">
+              <div 
+                className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 ring-1 ring-slate-200"
+                title="Anonymous Mode"
+              >
                 <Shield className="w-5 h-5" />
               </div>
             ) : (
@@ -72,6 +76,7 @@ export function PostComposer({ currentUser, parentPost, onPostCreated }: PostCom
             )}
           </div>
 
+          {/* Input Area */}
           <div className="flex-1 min-w-0">
             <textarea
               rows={isFocused || content.length > 0 ? 3 : 2}
@@ -83,14 +88,17 @@ export function PostComposer({ currentUser, parentPost, onPostCreated }: PostCom
               className="w-full text-sm text-slate-900 placeholder-slate-400 bg-transparent border-0 focus:outline-none focus:ring-0 resize-none leading-relaxed p-0 pt-1"
             />
 
+            {/* Error Message */}
             {error && (
               <div className="mt-2 text-xs text-rose-600 bg-rose-50 px-2.5 py-1.5 rounded-lg">
                 {error}
               </div>
             )}
 
+            {/* Bottom Controls Bar */}
             <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-slate-100">
               <div className="flex items-center gap-2">
+                {/* Anonymous Toggle */}
                 <button
                   type="button"
                   onClick={() => setIsAnonymous(!isAnonymous)}
@@ -116,12 +124,14 @@ export function PostComposer({ currentUser, parentPost, onPostCreated }: PostCom
               </div>
 
               <div className="flex items-center gap-3">
+                {/* Character Counter */}
                 {(isFocused || content.length > 0) && (
                   <span className={`text-[11px] font-mono ${remainingChars < 30 ? 'text-rose-500 font-bold' : 'text-slate-400'}`}>
                     {remainingChars}
                   </span>
                 )}
 
+                {/* Submit Post Button */}
                 <button
                   type="submit"
                   disabled={loading || !content.trim()}

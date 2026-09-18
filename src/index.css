@@ -19,6 +19,7 @@
     padding: 0;
   }
 
+  /* Support for iOS safe area bottom */
   .safe-area-bottom {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }

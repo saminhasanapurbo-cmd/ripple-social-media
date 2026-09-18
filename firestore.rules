@@ -1,0 +1,588 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Secure database-driven admin check: ONLY succeeds if /admins/{uid} exists.
+    function isAdmin() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // Helper to get verified user profile data from /users/{uid}
+    function getUserData(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data;
+    }
+
+    // Two-way server-side block check: true if userA blocked userB OR userB blocked userA
+    function isBlocked(userA, userB) {
+      return exists(/databases/$(database)/documents/blocks/$(userA + '_' + userB)) ||
+             exists(/databases/$(database)/documents/blocks/$(userB + '_' + userA));
+    }
+
+    // Helpers to resolve posts & comments data safely in both batch/transaction and single-operation contexts
+    function postDocExists(postId) {
+      return exists(/databases/$(database)/documents/posts/$(postId)) ||
+             existsAfter(/databases/$(database)/documents/posts/$(postId));
+    }
+
+    function getPostData(postId) {
+      return exists(/databases/$(database)/documents/posts/$(postId))
+        ? get(/databases/$(database)/documents/posts/$(postId)).data
+        : getAfter(/databases/$(database)/documents/posts/$(postId)).data;
+    }
+
+    function commentDocExists(commentId) {
+      return exists(/databases/$(database)/documents/comments/$(commentId)) ||
+             existsAfter(/databases/$(database)/documents/comments/$(commentId));
+    }
+
+    function getCommentData(commentId) {
+      return exists(/databases/$(database)/documents/comments/$(commentId))
+        ? get(/databases/$(database)/documents/comments/$(commentId)).data
+        : getAfter(/databases/$(database)/documents/comments/$(commentId)).data;
+    }
+
+    // Valid timestamp check: supports serverTimestamp() and bounded epoch milliseconds (within 1 min future, 5 min past)
+    function isValidTimestamp(ts) {
+      return ts == request.time 
+        || (ts is timestamp && ts == request.time)
+        || (ts is number && ts <= request.time.toMillis() + 60000 && ts >= request.time.toMillis() - 300000);
+    }
+
+    // Catch-all deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 0. Admins collection: Client write is completely forbidden.
+    // Must be created manually in Firebase Console.
+    match /admins/{adminId} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+
+    // 1. Users collection: user profiles
+    
+    match /postOwners/{postId} {
+      allow read: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
+      allow create: if isAuthenticated() 
+                    && request.resource.data.ownerId == request.auth.uid
+                    && request.resource.data.postId == postId
+                    && isValidTimestamp(request.resource.data.createdAt);
+      allow update, delete: if false;
+    }
+
+    match /moderationAudit/{auditId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() 
+                    && request.resource.data.moderatorUid == request.auth.uid
+                    && isValidTimestamp(request.resource.data.timestamp);
+      allow update, delete: if false;
+    }
+
+    match /userStats/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if false; // Only backend updates stats
+    }
+
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow create: if isOwner(userId)
+                    && request.resource.data.diff({}).affectedKeys().hasOnly([
+                      'uid', 'username', 'displayName', 'bio', 'photoURL', 'createdAt',
+                      'followersCount', 'followingCount', 'postsCount'
+                    ])
+                    && request.resource.data.uid == userId
+                    && request.resource.data.username is string
+                    && request.resource.data.username.size() >= 3
+                    && request.resource.data.username.size() <= 24
+                    && request.resource.data.displayName is string
+                    && request.resource.data.displayName.size() >= 1
+                    && request.resource.data.displayName.size() <= 40
+                    && (!('bio' in request.resource.data) || (request.resource.data.bio is string && request.resource.data.bio.size() <= 160))
+                    && request.resource.data.followersCount == 0
+                    && request.resource.data.followingCount == 0
+                    && request.resource.data.postsCount == 0
+                    && isValidTimestamp(request.resource.data.createdAt);
+
+      allow update: if isOwner(userId)
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'bio', 'photoURL'])
+                    && (!('displayName' in request.resource.data) || (request.resource.data.displayName is string && request.resource.data.displayName.size() >= 1 && request.resource.data.displayName.size() <= 40))
+                    && (!('bio' in request.resource.data) || (request.resource.data.bio is string && request.resource.data.bio.size() <= 160));
+
+      allow delete: if false;
+    }
+
+    // 2. Usernames collection: permanent unique reservations
+    match /usernames/{username} {
+      allow read: if true;
+      allow create: if isAuthenticated()
+                    && request.resource.data.diff({}).affectedKeys().hasOnly(['uid', 'createdAt'])
+                    && !exists(/databases/$(database)/documents/usernames/$(username))
+                    && request.resource.data.uid == request.auth.uid
+                    && username.size() >= 3
+                    && username.size() <= 24
+                    && isValidTimestamp(request.resource.data.createdAt);
+      allow update: if false;
+      allow delete: if false; // Permanent in Beta V1
+    }
+
+    // 3. Posts & Ripples
+    // Counters are calculated dynamically from collections and cannot be modified by clients.
+    match /posts/{postId} {
+      allow read: if request.auth != null;
+      allow create: if isAuthenticated()
+                    && request.resource.data.diff({}).affectedKeys().hasOnly([
+                      'authorId', 'authorUsername', 'authorDisplayName', 'authorPhotoURL',
+                      'content', 'imageUrl', 'createdAt', 'likesCount', 'commentsCount',
+                      'ripplesCount', 'parentPostId', 'parentAuthorUsername', 'rootPostId',
+                      'rippleDepth', 'isDeleted', 'anonymous', 'viewCount', 'moderationStatus', 'removedReasonCode', 'removedAt', 'removedBy'
+                    ])
+                    && (!('anonymous' in request.resource.data) || request.resource.data.anonymous is bool)
+                    && (!('viewCount' in request.resource.data) || request.resource.data.viewCount == 0)
+                    && (!('moderationStatus' in request.resource.data) || request.resource.data.moderationStatus == 'active')
+                    && (
+                      (
+                        (!('anonymous' in request.resource.data) || request.resource.data.anonymous == false)
+                        && request.resource.data.authorId == request.auth.uid
+                        && request.resource.data.authorUsername == getUserData(request.auth.uid).username
+                        && request.resource.data.authorDisplayName == getUserData(request.auth.uid).displayName
+                      )
+                      ||
+                      (
+                        'anonymous' in request.resource.data && request.resource.data.anonymous == true
+                        && request.resource.data.authorId == "anonymous"
+                        && request.resource.data.authorUsername == "anonymous"
+                        && request.resource.data.authorDisplayName == "Anonymous"
+                        && existsAfter(/databases/$(database)/documents/postOwners/$(postId))
+                        && getAfter(/databases/$(database)/documents/postOwners/$(postId)).data.ownerId == request.auth.uid
+                      )
+                    )
+                    && (
+                      (request.resource.data.content is string && request.resource.data.content.size() >= 1 && request.resource.data.content.size() <= 400)
+                      || (request.resource.data.imageUrl is string && request.resource.data.imageUrl.size() > 0)
+                    )
+                    // No Base64 images allowed in Firestore: must be https:// URL or empty
+                    && (
+                      !('imageUrl' in request.resource.data)
+                      || (request.resource.data.imageUrl is string && (
+                        request.resource.data.imageUrl.size() == 0 ||
+                        (request.resource.data.imageUrl.size() <= 2048 && request.resource.data.imageUrl.matches('^https://.*'))
+                      ))
+                    )
+                    // Ripple parent relationship and blocking enforcement
+                    && (
+                      request.resource.data.parentPostId == null
+                      || (
+                        request.resource.data.parentPostId is string
+                        && exists(/databases/$(database)/documents/posts/$(request.resource.data.parentPostId))
+                        && get(/databases/$(database)/documents/posts/$(request.resource.data.parentPostId)).data.authorId != 'anonymous'
+                        && !isBlocked(request.auth.uid, get(/databases/$(database)/documents/posts/$(request.resource.data.parentPostId)).data.authorId)
+                      )
+                    )
+                    && isValidTimestamp(request.resource.data.createdAt);
+
+      // Only the author can update their post, and ONLY the content field.
+      // Social counters (likesCount, commentsCount, ripplesCount) cannot be modified by clients.
+      allow update: if isAuthenticated()
+                    && (
+                      (resource.data.authorId == request.auth.uid) 
+                      || 
+                      (resource.data.authorId == 'anonymous' && exists(/databases/$(database)/documents/postOwners/$(postId)) && get(/databases/$(database)/documents/postOwners/$(postId)).data.ownerId == request.auth.uid)
+                      || isAdmin()
+                    )
+                    && (
+                      (
+                        !isAdmin()
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content'])
+                        && request.resource.data.content is string
+                        && request.resource.data.content.size() >= 1
+                        && request.resource.data.content.size() <= 400
+                      )
+                      ||
+                      (
+                        isAdmin()
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['moderationStatus', 'removedReasonCode', 'removedAt', 'removedBy', 'isDeleted', 'content', 'imageUrl', 'contextLabel'])
+                      )
+                    );
+
+      allow delete: if isAuthenticated() && (resource.data.authorId == request.auth.uid || isAdmin() || (resource.data.authorId == 'anonymous' && exists(/databases/$(database)/documents/postOwners/$(postId)) && get(/databases/$(database)/documents/postOwners/$(postId)).data.ownerId == request.auth.uid));
+    }
+
+    // 4. Likes collection: deterministic doc ID {postId}_{userId}
+    match /likes/{likeId} {
+      allow read: if request.auth != null;
+      allow create: if isAuthenticated()
+                    && request.resource.data.diff({}).affectedKeys().hasOnly(['postId', 'userId', 'createdAt'])
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.postId is string
+                    && likeId == request.resource.data.postId + '_' + request.auth.uid
+                    && exists(/databases/$(database)/documents/posts/$(request.resource.data.postId))
+                    && get(/databases/$(database)/documents/posts/$(request.resource.data.postId)).data.authorId != 'anonymous'
+                    && !isBlocked(request.auth.uid, get(/databases/$(database)/documents/posts/$(request.resource.data.postId)).data.authorId)
+                    && isValidTimestamp(request.resource.data.createdAt);
+
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow update: if false;
+    }
+
+    // 5. Follows collection: deterministic doc ID {followerId}_{followingId}
+    match /follows/{followId} {
+      allow read: if request.auth != null;
+      allow create: if isAuthenticated()
+                    && request.resource.data.diff({}).affectedKeys().hasOnly(['followerId', 'followingId', 'createdAt'])
+                    && request.resource.data.followerId == request.auth.uid
+                    && request.resource.data.followingId is string
+                    && request.resource.data.followingId != request.auth.uid
+                    && followId == request.auth.uid + '_' + request.resource.data.followingId
+                    && !isBlocked(request.auth.uid, request.resource.data.followingId)
+                    && isValidTimestamp(request.resource.data.createdAt);
+
+      allow delete: if isAuthenticated() && (
+        resource.data.followerId == request.auth.uid || 
+        resource.data.followingId == request.auth.uid
+      );
+      allow update: if false;
+    }
+
+    // 6. Blocks collection: deterministic doc ID {userId}_{blockedUserId}
+    match /blocks/{blockId} {
+      allow read: if isAuthenticated() && (
+        resource.data.userId == request.auth.uid || resource.data.blockedUserId == request.auth.uid
+      );
+      allow create: if isAuthenticated()
+                    && request.resource.data.diff({}).affectedKeys().hasOnly(['userId', 'blockedUserId', 'createdAt'])
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.blockedUserId is string
+                    && request.resource.data.blockedUserId != request.auth.uid
+                    && blockId == request.auth.uid + '_' + request.resource.data.blockedUserId
+                    && isValidTimestamp(request.resource.data.createdAt);
+
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow update: if false;
+    }
+
+    // 7. Comments collection
+    match /comments/{commentId} {
+      allow read: if request.auth != null;
+      allow create: if isAuthenticated()
+                    && request.resource.data.diff({}).affectedKeys().hasOnly([
+                      'postId', 'authorId', 'authorUsername', 'authorDisplayName', 'authorPhotoURL',
+                      'content', 'createdAt'
+                    ])
+                    && request.resource.data.authorId == request.auth.uid
+                    && request.resource.data.authorUsername == getUserData(request.auth.uid).username
+                    && request.resource.data.authorDisplayName == getUserData(request.auth.uid).displayName
+                    && request.resource.data.content is string
+                    && request.resource.data.content.size() >= 1
+                    && request.resource.data.content.size() <= 280
+                    && request.resource.data.postId is string
+                    && exists(/databases/$(database)/documents/posts/$(request.resource.data.postId))
+                    && get(/databases/$(database)/documents/posts/$(request.resource.data.postId)).data.authorId != 'anonymous'
+                    && !isBlocked(request.auth.uid, get(/databases/$(database)/documents/posts/$(request.resource.data.postId)).data.authorId)
+                    && isValidTimestamp(request.resource.data.createdAt);
+
+      allow delete: if isAuthenticated() && (resource.data.authorId == request.auth.uid || isAdmin());
+      allow update: if false;
+    }
+
+    // 8. Notifications collection: strictly tied to real actions
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && resource.data.recipientId == request.auth.uid;
+      
+      allow create: if isAuthenticated()
+                    && request.resource.data.diff({}).affectedKeys().hasOnly([
+                      'recipientId', 'actorId', 'actorUsername', 'actorDisplayName', 'actorPhotoURL',
+                      'type', 'postId', 'commentId', 'read', 'createdAt'
+                    ])
+                    && request.resource.data.actorId == request.auth.uid
+                    && request.resource.data.recipientId is string
+                    && request.resource.data.recipientId != request.auth.uid
+                    && !isBlocked(request.auth.uid, request.resource.data.recipientId)
+                    && request.resource.data.actorUsername == getUserData(request.auth.uid).username
+                    && request.resource.data.actorDisplayName == getUserData(request.auth.uid).displayName
+                    && request.resource.data.read == false
+                    && isValidTimestamp(request.resource.data.createdAt)
+                    && (
+                      // Like notification: like doc must exist, deterministic ID, recipient must be post author
+                      (
+                        request.resource.data.type == 'like'
+                        && notificationId == 'like_' + request.resource.data.postId + '_' + request.auth.uid
+                        && request.resource.data.postId is string
+                        && (exists(/databases/$(database)/documents/likes/$(request.resource.data.postId + '_' + request.auth.uid)) || existsAfter(/databases/$(database)/documents/likes/$(request.resource.data.postId + '_' + request.auth.uid)))
+                        && exists(/databases/$(database)/documents/posts/$(request.resource.data.postId))
+                        && get(/databases/$(database)/documents/posts/$(request.resource.data.postId)).data.authorId == request.resource.data.recipientId
+                      )
+                      // Follow notification: follow doc must exist, deterministic ID
+                      || (
+                        request.resource.data.type == 'follow'
+                        && notificationId == 'follow_' + request.auth.uid + '_' + request.resource.data.recipientId
+                        && (exists(/databases/$(database)/documents/follows/$(request.auth.uid + '_' + request.resource.data.recipientId)) || existsAfter(/databases/$(database)/documents/follows/$(request.auth.uid + '_' + request.resource.data.recipientId)))
+                      )
+                      // Comment notification: referenced comment exists, comment author is authenticated user, comment postId equals notification postId, deterministic ID, recipient is post author
+                      || (
+                        request.resource.data.type == 'comment'
+                        && request.resource.data.commentId is string
+                        && request.resource.data.postId is string
+                        && notificationId == 'comment_' + request.resource.data.commentId
+                        && commentDocExists(request.resource.data.commentId)
+                        && getCommentData(request.resource.data.commentId).authorId == request.auth.uid
+                        && getCommentData(request.resource.data.commentId).postId == request.resource.data.postId
+                        && exists(/databases/$(database)/documents/posts/$(request.resource.data.postId))
+                        && get(/databases/$(database)/documents/posts/$(request.resource.data.postId)).data.authorId == request.resource.data.recipientId
+                      )
+                      // Ripple notification: child post exists, belongs to authenticated user, has correct parentPostId, sends only to parent post author, deterministic ID
+                      || (
+                        request.resource.data.type == 'ripple'
+                        && request.resource.data.postId is string
+                        && notificationId == 'ripple_' + request.resource.data.postId
+                        && postDocExists(request.resource.data.postId)
+                        && getPostData(request.resource.data.postId).authorId == request.auth.uid
+                        && getPostData(request.resource.data.postId).parentPostId is string
+                        && exists(/databases/$(database)/documents/posts/$(getPostData(request.resource.data.postId).parentPostId))
+                        && get(/databases/$(database)/documents/posts/$(getPostData(request.resource.data.postId).parentPostId)).data.authorId == request.resource.data.recipientId
+                      )
+                    );
+
+      allow update: if isAuthenticated()
+                    && resource.data.recipientId == request.auth.uid
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+
+      allow delete: if isAuthenticated() && (
+        resource.data.recipientId == request.auth.uid || 
+        resource.data.actorId == request.auth.uid
+      );
+    }
+
+    // 9. Reports collection
+    match /reports/{reportId} {
+      allow create: if isAuthenticated()
+                    && request.resource.data.diff({}).affectedKeys().hasOnly([
+                      'reporterId', 'targetType', 'targetId', 'reason', 'details', 'status', 'createdAt'
+                    ])
+                    && request.resource.data.reporterId == request.auth.uid
+                    && request.resource.data.targetType in ['post', 'user']
+                    && request.resource.data.targetId is string
+                    && request.resource.data.reason is string
+                    && request.resource.data.reason.size() >= 2
+                    && request.resource.data.reason.size() <= 100
+                    && (!('details' in request.resource.data) || (request.resource.data.details is string && request.resource.data.details.size() <= 300))
+                    && request.resource.data.status == 'pending'
+                    && isValidTimestamp(request.resource.data.createdAt);
+
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Helper to verify deterministic conversation ID: sorted UIDs joined by '_'
+    function isDeterministicConversationId(convId, p0, p1) {
+      return convId == (p0 < p1 ? p0 + '_' + p1 : p1 + '_' + p0);
+    }
+
+    // Helper to get other participant from a 2-element list
+    function getOtherParticipant(participants) {
+      return participants[0] == request.auth.uid ? participants[1] : participants[0];
+    }
+
+    // 10. Conversations collection: deterministic 1-on-1 private chats
+    match /conversations/{conversationId} {
+      // Read: ONLY authenticated participants can read their conversations. No admin bypass.
+      // If document does not exist yet (resource == null), allow checking existence if caller is in the deterministic ID.
+      allow get: if isAuthenticated() && (
+        resource == null
+          ? (conversationId.matches('^' + request.auth.uid + '_[a-zA-Z0-9_-]+$') || conversationId.matches('^[a-zA-Z0-9_-]+_' + request.auth.uid + '$'))
+          : (request.auth.uid in resource.data.participants)
+      );
+
+      allow list: if isAuthenticated() && (
+        request.auth.uid in resource.data.participants
+      );
+
+      // Helper for mutual follows check
+      function isMutualFollow(participants) {
+        return exists(/databases/$(database)/documents/follows/$(participants[0] + '_' + participants[1]))
+            && exists(/databases/$(database)/documents/follows/$(participants[1] + '_' + participants[0]));
+      }
+
+      // Create: Authenticated participant, exactly 2 distinct participants, deterministic ID, neither blocked
+      // Both participants must correspond to valid profiles in /users/{uid}
+      allow create: if isAuthenticated()
+                    && request.resource.data.participants is list
+                    && request.resource.data.participants.size() == 2
+                    && request.resource.data.participants[0] is string
+                    && request.resource.data.participants[1] is string
+                    && request.resource.data.participants[0] != request.resource.data.participants[1]
+                    && request.auth.uid in request.resource.data.participants
+                    && isDeterministicConversationId(
+                      conversationId,
+                      request.resource.data.participants[0],
+                      request.resource.data.participants[1]
+                    )
+                    && exists(/databases/$(database)/documents/users/$(request.resource.data.participants[0]))
+                    && exists(/databases/$(database)/documents/users/$(request.resource.data.participants[1]))
+                    && !isBlocked(
+                      request.resource.data.participants[0],
+                      request.resource.data.participants[1]
+                    )
+                    && isValidTimestamp(request.resource.data.createdAt)
+                    && isValidTimestamp(request.resource.data.updatedAt)
+                    // Must contain the required fields
+                    && request.resource.data.keys().hasAll(['participants', 'createdAt', 'updatedAt', 'unreadCount'])
+                    // Strictly limit allowed fields to avoid arbitrary metadata
+                    && request.resource.data.keys().hasOnly(['participants', 'createdAt', 'updatedAt', 'unreadCount', 'lastMessageText', 'lastMessageSenderId', 'status', 'requestedBy'])
+                    // If optional last message fields are provided during creation, they MUST be empty strings
+                    && (!('lastMessageText' in request.resource.data) || request.resource.data.lastMessageText == '')
+                    && (!('lastMessageSenderId' in request.resource.data) || request.resource.data.lastMessageSenderId == '')
+                    && (
+                      (isMutualFollow(request.resource.data.participants) && request.resource.data.status == 'accepted' && (!('requestedBy' in request.resource.data) || request.resource.data.requestedBy == null)) ||
+                      (!isMutualFollow(request.resource.data.participants) && request.resource.data.status == 'pending' && request.resource.data.requestedBy == request.auth.uid)
+                    )
+                    // unreadCount must contain ONLY the two participant UIDs, starting at exactly 0
+                    && request.resource.data.unreadCount is map
+                    && request.resource.data.unreadCount.keys().hasAll(request.resource.data.participants)
+                    && request.resource.data.unreadCount.keys().hasOnly(request.resource.data.participants)
+                    && request.resource.data.unreadCount[request.resource.data.participants[0]] == 0
+                    && request.resource.data.unreadCount[request.resource.data.participants[1]] == 0;
+
+      // Read state update validation: only clear caller's own unread count, do NOT alter updatedAt
+      function isValidReadUpdate() {
+        let diff = request.resource.data.diff(resource.data);
+        let otherUid = getOtherParticipant(resource.data.participants);
+        let currentOtherUnread = ('unreadCount' in resource.data && otherUid in resource.data.unreadCount)
+          ? resource.data.unreadCount[otherUid]
+          : 0;
+
+        return diff.affectedKeys().hasOnly(['unreadCount'])
+          && request.resource.data.unreadCount is map
+          && request.resource.data.unreadCount.keys().hasOnly(resource.data.participants)
+          && request.resource.data.unreadCount[request.auth.uid] == 0
+          && request.resource.data.unreadCount[otherUid] == currentOtherUnread;
+      }
+
+      // Message send update validation: caller must be sender, atomic match with newly created message doc in batch
+      function isValidMessageUpdate() {
+        let diff = request.resource.data.diff(resource.data);
+        let otherUid = getOtherParticipant(resource.data.participants);
+        let prevOtherUnread = ('unreadCount' in resource.data && otherUid in resource.data.unreadCount)
+          ? resource.data.unreadCount[otherUid]
+          : 0;
+        let messageDocPath = /databases/$(database)/documents/conversations/$(conversationId)/messages/$(request.resource.data.lastMessageId);
+
+        return diff.affectedKeys().hasOnly(['lastMessageText', 'lastMessageSenderId', 'lastMessageAt', 'lastMessageId', 'updatedAt', 'unreadCount'])
+          && request.resource.data.lastMessageSenderId == request.auth.uid
+          && request.resource.data.lastMessageText is string
+          && request.resource.data.lastMessageText.size() > 0
+          && request.resource.data.lastMessageText.size() <= 4000
+          && request.resource.data.lastMessageId is string
+          && request.resource.data.lastMessageId.size() > 0
+          && isValidTimestamp(request.resource.data.lastMessageAt)
+          && isValidTimestamp(request.resource.data.updatedAt)
+          // Unread counts verification: only 2 participants keys, caller count becomes 0, recipient count increments by 1
+          && request.resource.data.unreadCount is map
+          && request.resource.data.unreadCount.keys().hasOnly(resource.data.participants)
+          && request.resource.data.unreadCount[request.auth.uid] == 0
+          && request.resource.data.unreadCount[otherUid] == prevOtherUnread + 1
+          // Atomic message verification: newly created in same batch, did not exist before, exists after, matching sender & text
+          && !exists(messageDocPath)
+          && existsAfter(messageDocPath)
+          && getAfter(messageDocPath).data.senderId == request.auth.uid
+          && (
+            (getAfter(messageDocPath).data.text != '' && getAfter(messageDocPath).data.text == request.resource.data.lastMessageText) ||
+            (getAfter(messageDocPath).data.text == '' && 'imageUrl' in getAfter(messageDocPath).data && request.resource.data.lastMessageText == 'Sent an image')
+          )
+          && (
+            !('status' in resource.data) ||
+            resource.data.status == 'accepted' ||
+            (resource.data.status == 'pending' && resource.data.requestedBy == request.auth.uid && (!('lastMessageId' in resource.data) || resource.data.lastMessageId == ''))
+          );
+      }
+
+      // Update: strictly either a valid read update OR a valid message update, non-blocked participant
+      function isValidStatusUpdate() {
+        let diff = request.resource.data.diff(resource.data);
+        return diff.affectedKeys().hasOnly(['status'])
+          && request.resource.data.status in ['accepted', 'declined']
+          && resource.data.status == 'pending'
+          // Only the recipient (the one who did NOT request) can accept/decline
+          && resource.data.requestedBy != request.auth.uid;
+      }
+
+      function isValidTypingUpdate() {
+        let diff = request.resource.data.diff(resource.data);
+        let typingDiff = request.resource.data.typing.diff('typing' in resource.data ? resource.data.typing : {});
+        return diff.affectedKeys().hasOnly(['typing'])
+          && request.resource.data.typing is map
+          && request.resource.data.typing.keys().hasOnly(resource.data.participants)
+          && typingDiff.affectedKeys().hasOnly([request.auth.uid])
+          && (
+            !(request.auth.uid in request.resource.data.typing) 
+            || isValidTimestamp(request.resource.data.typing[request.auth.uid])
+          );
+      }
+
+      // Participants and createdAt MUST be immutable
+      allow update: if isAuthenticated()
+                    && request.auth.uid in resource.data.participants
+                    && request.resource.data.participants == resource.data.participants
+                    && request.resource.data.createdAt == resource.data.createdAt
+                    && !isBlocked(resource.data.participants[0], resource.data.participants[1])
+                    && (isValidReadUpdate() || isValidMessageUpdate() || isValidStatusUpdate() || isValidTypingUpdate());
+
+      allow delete: if false;
+
+      // Subcollection: Messages
+      match /messages/{messageId} {
+        // Read: Caller must be an authenticated participant in the parent conversation
+        allow read: if isAuthenticated()
+                    && request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants;
+
+        // Create: Caller must be participant, senderId must be request.auth.uid, text 1-4000 chars, not blocked
+        // AND parent conversation must be atomically updated in the same batch with matching lastMessage fields
+        allow create: if isAuthenticated()
+                      && request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants
+                      && request.resource.data.senderId == request.auth.uid
+                      && request.resource.data.text is string
+                      && request.resource.data.text.size() <= 4000
+                      && (request.resource.data.text.size() > 0 || (request.resource.data.imageUrl is string && request.resource.data.imageUrl.size() > 0) || ('mediaPath' in request.resource.data))
+                      && (!('imageUrl' in request.resource.data) || (request.resource.data.imageUrl is string && request.resource.data.imageUrl.matches('^https://.*')))
+                      && (!('replyToMessageId' in request.resource.data) || (request.resource.data.replyToMessageId is string && exists(/databases/$(database)/documents/conversations/$(conversationId)/messages/$(request.resource.data.replyToMessageId))))
+                      && (!('reactions' in request.resource.data) || request.resource.data.reactions == {})
+                      && isValidTimestamp(request.resource.data.createdAt)
+                      && request.resource.data.keys().hasOnly(['senderId', 'text', 'createdAt', 'imageUrl', 'replyToMessageId', 'reactions', 'messageType', 'mediaPath', 'mediaStatus'])
+                      && !isBlocked(
+                        get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants[0],
+                        get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants[1]
+                      )
+                      && existsAfter(/databases/$(database)/documents/conversations/$(conversationId))
+                      && getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data.lastMessageId == messageId
+                      && getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data.lastMessageSenderId == request.auth.uid
+                      && (
+                        (request.resource.data.text != '' && getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data.lastMessageText == request.resource.data.text) ||
+                        (request.resource.data.text == '' && 'imageUrl' in request.resource.data && getAfter(/databases/$(database)/documents/conversations/$(conversationId)).data.lastMessageText == 'Sent an image')
+                      );
+
+        allow update: if isAuthenticated()
+                      && request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants
+                      && !isBlocked(
+                        get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants[0],
+                        get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants[1]
+                      )
+                      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+                      && request.resource.data.reactions is map
+                      && request.resource.data.reactions.diff('reactions' in resource.data ? resource.data.reactions : {}).affectedKeys().hasOnly([request.auth.uid])
+                      && (
+                        !(request.auth.uid in request.resource.data.reactions)
+                        || request.resource.data.reactions[request.auth.uid] in ['❤️', '😂', '👍', '😮', '😢']
+                      );
+
+        allow delete: if false;
+      }
+    }
+  }
+}

@@ -43,19 +43,26 @@ function renderBootstrapFailure(error: any) {
   `;
 }
 
+// Handle pre-React errors
 window.addEventListener('error', (event) => {
-  if (!appMounted) renderBootstrapFailure(event.error || event.message);
+  if (!appMounted) {
+    renderBootstrapFailure(event.error || event.message);
+  }
 });
 
 window.addEventListener('unhandledrejection', (event) => {
-  if (!appMounted) renderBootstrapFailure(event.reason);
+  if (!appMounted) {
+    renderBootstrapFailure(event.reason);
+  }
 });
 
 async function bootstrap() {
   console.info('[Ripple] bootstrap started');
   try {
     const root = document.getElementById('root');
-    if (!root) throw new Error('ROOT_ELEMENT_MISSING');
+    if (!root) {
+      throw new Error('ROOT_ELEMENT_MISSING');
+    }
 
     const [
       { default: App },

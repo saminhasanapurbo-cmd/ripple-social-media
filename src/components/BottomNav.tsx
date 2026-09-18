@@ -19,6 +19,7 @@ export function BottomNav({
       className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/80 safe-area-bottom shadow-xs"
     >
       <div className="max-w-md mx-auto flex items-center justify-between h-14 px-2">
+        {/* 1. Home */}
         <button
           id="nav-tab-home"
           type="button"
@@ -32,6 +33,7 @@ export function BottomNav({
           <span className={`text-[10px] mt-0.5 ${currentTab === 'home' ? 'font-bold text-blue-600' : 'font-medium'}`}>Home</span>
         </button>
 
+        {/* 2. Search */}
         <button
           id="nav-tab-search"
           type="button"
@@ -45,6 +47,7 @@ export function BottomNav({
           <span className={`text-[10px] mt-0.5 ${currentTab === 'search' ? 'font-bold text-blue-600' : 'font-medium'}`}>Search</span>
         </button>
 
+        {/* 3. Post (Create) */}
         <button
           id="nav-tab-create"
           type="button"
@@ -57,6 +60,7 @@ export function BottomNav({
           </div>
         </button>
 
+        {/* 4. Activity */}
         <button
           id="nav-tab-notifications"
           type="button"
@@ -77,6 +81,7 @@ export function BottomNav({
           <span className={`text-[10px] mt-0.5 ${currentTab === 'notifications' ? 'font-bold text-blue-600' : 'font-medium'}`}>Activity</span>
         </button>
 
+        {/* 5. Profile */}
         <button
           id="nav-tab-profile"
           type="button"

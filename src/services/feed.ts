@@ -39,6 +39,13 @@ export function getLastFeedDiagnostic(): FeedDiagnosticInfo | null {
   return lastFeedDiagnostic;
 }
 
+/**
+ * Authoritative feed fetcher:
+ * Uses ONLY the trusted backend `getFeedV41` callable function.
+ * Fails closed if the function returns an error or is unavailable.
+ * Direct client Firestore fallback has been permanently removed to guarantee
+ * private anonymous owner protection and two-way block enforcement.
+ */
 export async function fetchFeedPosts(params: FetchFeedParams = {}): Promise<FeedResponse> {
   const limitCount = Math.min(Math.max(Number(params.limit) || 20, 1), 50);
   const cursor = params.cursor || null;
@@ -71,8 +78,8 @@ export async function fetchFeedPosts(params: FetchFeedParams = {}): Promise<Feed
       viewerUid: params.viewerUid
     };
 
-    const code = err?.code
-      ? (String(err.code).startsWith('functions/') ? err.code : `functions/${err.code}`)
+    const code = err?.code 
+      ? (String(err.code).startsWith('functions/') ? err.code : `functions/${err.code}`) 
       : 'functions/internal';
     const safeCode = err?.details?.safeCode || (err?.message && !String(err.message).startsWith('INTERNAL') ? err.message : null);
     const stage = err?.details?.stage;
@@ -83,6 +90,8 @@ export async function fetchFeedPosts(params: FetchFeedParams = {}): Promise<Feed
     if (stage) parts.push(stage);
     if (backendBuild) parts.push(backendBuild);
 
-    throw new Error(parts.join(' · '));
+    const formattedError = parts.join(' · ');
+    throw new Error(formattedError);
   }
 }
+

@@ -1,0 +1,220 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Public user profile information and settings",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth user ID" },
+        "username": { "type": "string", "minLength": 3, "maxLength": 24, "pattern": "^[a-z0-9_.]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "bio": { "type": "string", "maxLength": 160 },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "followersCount": { "type": "number" },
+        "followingCount": { "type": "number" },
+        "postsCount": { "type": "number" }
+      },
+      "required": ["uid", "username", "displayName", "createdAt"]
+    },
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Administrator UID record (created manually in Firebase Console)",
+      "type": "object",
+      "properties": {
+        "role": { "type": "string" },
+        "createdAt": { "type": "number" }
+      }
+    },
+    "UsernameClaim": {
+      "title": "UsernameClaim",
+      "description": "Unique username claim reservation",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["uid", "createdAt"]
+    },
+    "Post": {
+      "title": "Post",
+      "description": "Ripple post or continued thought chain",
+      "type": "object",
+      "properties": {
+        "authorId": { "type": "string" },
+        "authorUsername": { "type": "string" },
+        "authorDisplayName": { "type": "string" },
+        "authorPhotoURL": { "type": "string" },
+        "content": { "type": "string", "maxLength": 400 },
+        "imageUrl": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "likesCount": { "type": "number" },
+        "commentsCount": { "type": "number" },
+        "ripplesCount": { "type": "number" },
+        "parentPostId": { "type": "string" },
+        "parentAuthorUsername": { "type": "string" },
+        "rootPostId": { "type": "string" },
+        "rippleDepth": { "type": "number" },
+        "isDeleted": { "type": "boolean" }
+      },
+      "required": ["authorId", "authorUsername", "authorDisplayName", "createdAt"]
+    },
+    "Like": {
+      "title": "Like",
+      "description": "Deterministic post like item",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["postId", "userId", "createdAt"]
+    },
+    "Follow": {
+      "title": "Follow",
+      "description": "Deterministic user follow relationship",
+      "type": "object",
+      "properties": {
+        "followerId": { "type": "string" },
+        "followingId": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["followerId", "followingId", "createdAt"]
+    },
+    "Block": {
+      "title": "Block",
+      "description": "User block relationship",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "blockedUserId": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["userId", "blockedUserId", "createdAt"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "Threaded post comment",
+      "type": "object",
+      "properties": {
+        "postId": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorUsername": { "type": "string" },
+        "authorDisplayName": { "type": "string" },
+        "authorPhotoURL": { "type": "string" },
+        "content": { "type": "string", "minLength": 1, "maxLength": 280 },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["postId", "authorId", "authorUsername", "content", "createdAt"]
+    },
+    "NotificationItem": {
+      "title": "NotificationItem",
+      "description": "In-app activity notification",
+      "type": "object",
+      "properties": {
+        "recipientId": { "type": "string" },
+        "actorId": { "type": "string" },
+        "actorUsername": { "type": "string" },
+        "actorDisplayName": { "type": "string" },
+        "actorPhotoURL": { "type": "string" },
+        "type": { "type": "string", "enum": ["like", "comment", "follow", "ripple"] },
+        "postId": { "type": "string" },
+        "commentId": { "type": "string" },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["recipientId", "actorId", "actorUsername", "type", "read", "createdAt"]
+    },
+    "ReportItem": {
+      "title": "ReportItem",
+      "description": "Community moderation report",
+      "type": "object",
+      "properties": {
+        "reporterId": { "type": "string" },
+        "targetType": { "type": "string", "enum": ["post", "user"] },
+        "targetId": { "type": "string" },
+        "reason": { "type": "string", "minLength": 2, "maxLength": 100 },
+        "details": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "resolved", "dismissed"] }
+      },
+      "required": ["reporterId", "targetType", "targetId", "reason", "status", "createdAt"]
+    },
+    "Conversation": {
+      "title": "Conversation",
+      "description": "Deterministic 1-on-1 private conversation between two users",
+      "type": "object",
+      "properties": {
+        "participants": { "type": "array", "items": { "type": "string" }, "minItems": 2, "maxItems": 2 },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" },
+        "lastMessageText": { "type": "string" },
+        "lastMessageSenderId": { "type": "string" },
+        "lastMessageAt": { "type": "number" },
+        "unreadCount": { "type": "object" }
+      },
+      "required": ["participants", "createdAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Private text message inside a conversation",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "text": { "type": "string", "maxLength": 4000 },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["senderId", "text", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/admins/{adminId}": {
+      "schema": "AdminRecord",
+      "description": "Administrator UID records"
+    },
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile collection"
+    },
+    "/usernames/{username}": {
+      "schema": "UsernameClaim",
+      "description": "Unique username reservations"
+    },
+    "/posts/{postId}": {
+      "schema": "Post",
+      "description": "Posts and Ripple chain thoughts"
+    },
+    "/likes/{likeId}": {
+      "schema": "Like",
+      "description": "Likes on posts"
+    },
+    "/follows/{followId}": {
+      "schema": "Follow",
+      "description": "Follow relations between users"
+    },
+    "/blocks/{blockId}": {
+      "schema": "Block",
+      "description": "Blocks between users"
+    },
+    "/comments/{commentId}": {
+      "schema": "Comment",
+      "description": "Comments on posts"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "NotificationItem",
+      "description": "In-app notifications"
+    },
+    "/reports/{reportId}": {
+      "schema": "ReportItem",
+      "description": "Moderation reports only accessible by admin"
+    },
+    "/conversations/{conversationId}": {
+      "schema": "Conversation",
+      "description": "Direct message conversations"
+    },
+    "/conversations/{conversationId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Messages in direct conversation"
+    }
+  }
+}

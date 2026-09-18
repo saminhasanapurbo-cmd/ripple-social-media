@@ -1,6 +1,6 @@
 export interface UserProfile {
   uid: string;
-  username: string;
+  username: string; // lowercase, unique identifier
   displayName: string;
   bio: string;
   photoURL?: string;
@@ -31,9 +31,10 @@ export interface Post {
   likesCount?: number;
   commentsCount?: number;
   ripplesCount?: number;
+  // If this post is part of a Ripple chain:
   parentPostId?: string | null;
   parentAuthorUsername?: string | null;
-  rootPostId?: string | null;
+  rootPostId?: string | null; // Top-level parent of the Ripple
   rippleDepth?: number;
   isDeleted?: boolean;
   anonymous?: boolean;
@@ -94,6 +95,7 @@ export interface ConversationParticipantSummary {
 export interface Conversation {
   id: string;
   participants: string[];
+  /** @deprecated participantDetails is legacy, use authoritative /users/{uid} instead */
   participantDetails?: {
     [uid: string]: {
       username: string;

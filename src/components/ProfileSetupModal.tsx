@@ -46,7 +46,9 @@ export function ProfileSetupModal() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">Username (Unique)</label>
+            <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+              Username (Unique)
+            </label>
             <div className="relative">
               <span className="absolute left-3.5 top-2.5 text-slate-400 font-bold text-xs">@</span>
               <input
@@ -64,7 +66,9 @@ export function ProfileSetupModal() {
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">Display Name</label>
+            <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+              Display Name
+            </label>
             <input
               id="setup-displayname-input"
               type="text"
@@ -78,7 +82,9 @@ export function ProfileSetupModal() {
           </div>
 
           <div>
-            <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">Bio (Optional)</label>
+            <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+              Bio (Optional)
+            </label>
             <textarea
               id="setup-bio-input"
               value={bio}
@@ -88,7 +94,9 @@ export function ProfileSetupModal() {
               maxLength={160}
               className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition resize-none text-slate-900"
             />
-            <div className="text-right text-[10px] text-slate-400 mt-0.5">{bio.length}/160</div>
+            <div className="text-right text-[10px] text-slate-400 mt-0.5">
+              {bio.length}/160
+            </div>
           </div>
 
           <button

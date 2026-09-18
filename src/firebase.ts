@@ -19,9 +19,14 @@ if (!firebaseConfig.firestoreDatabaseId) {
   throw new Error('FIREBASE_CONFIG_MISSING_DATABASE_ID');
 }
 
+// Initialize Firebase App
 export const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+
+// Authentication
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+
+// Database initialization without fragile persistent cache to guarantee reliable startup across all environments
 export const db = initializeFirestore(app, {}, firebaseConfig.firestoreDatabaseId);
 
 export { 
