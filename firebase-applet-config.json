@@ -1,0 +1,12 @@
+{
+  "projectId": "kingly-multiplexer-gbg1d",
+  "appId": "YOUR_FIREBASE_APP_ID",
+  "apiKey": "YOUR_FIREBASE_WEB_API_KEY",
+  "authDomain": "kingly-multiplexer-gbg1d.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-485fb845-462f-4777-a3e8-0d2bb4a8cf18",
+  "storageBucket": "kingly-multiplexer-gbg1d.firebasestorage.app",
+  "messagingSenderId": "YOUR_MESSAGING_SENDER_ID",
+  "measurementId": "",
+  "oAuthClientId": "YOUR_OAUTH_CLIENT_ID",
+  "recaptchaSiteKey": ""
+}

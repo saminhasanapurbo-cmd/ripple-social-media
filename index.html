@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ripple</title>
+    <meta name="description" content="A mobile-first social media application where posts become connected social chains." />
+    <meta property="og:title" content="Ripple" />
+    <meta property="og:description" content="A mobile-first social media application where posts become connected social chains." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <style>
+      #ripple-boot-screen {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        background-color: #f8fafc;
+        font-family: system-ui, -apple-system, sans-serif;
+        color: #0f172a;
+        padding: 1rem;
+      }
+      #ripple-boot-screen .logo-box {
+        width: 48px;
+        height: 48px;
+        background: linear-gradient(135deg, #2563eb, #1d4ed8);
+        border-radius: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: bold;
+        font-size: 24px;
+        box-shadow: 0 10px 15px -3px rgba(37, 99, 235, 0.3);
+        margin-bottom: 1rem;
+        animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.7; transform: scale(0.96); }
+      }
+      #ripple-boot-screen h1 {
+        font-size: 1.25rem;
+        font-weight: 800;
+        margin: 0 0 0.25rem 0;
+        letter-spacing: -0.025em;
+      }
+      #ripple-boot-screen p {
+        font-size: 0.8rem;
+        color: #64748b;
+        margin: 0 0 1rem 0;
+      }
+      #ripple-boot-screen .badge {
+        font-size: 0.7rem;
+        background: #dbeafe;
+        color: #1e40af;
+        padding: 0.15rem 0.5rem;
+        border-radius: 9999px;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div id="ripple-boot-screen">
+        <div class="logo-box">R</div>
+        <h1>Ripple</h1>
+        <p>Starting application...</p>
+        <span class="badge">v41</span>
+      </div>
+    </div>
+    <noscript>
+      <div style="padding: 2rem; text-align: center; font-family: sans-serif;">
+        <h2>JavaScript Required</h2>
+        <p>Ripple requires JavaScript to run. Please enable JavaScript in your browser settings.</p>
+      </div>
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

@@ -1,0 +1,6 @@
+{
+  "name": "Ripple",
+  "description": "A mobile-first social media application where posts become connected social chains.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
